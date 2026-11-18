@@ -35,7 +35,7 @@
     showMessage(initialMessage);
     const panel = node.querySelector('#authPanel');
     const submitAuth = async auth => {
-      if (!auth?.access_token || !auth?.user?.id) throw new Error('Почта ещё не подтверждена. Введите код из письма.');
+      if (!auth?.access_token || !auth?.user?.id) throw new Error('Сначала подтвердите почту через письмо.');
       const rows = await request(`/rest/v1/profiles?select=full_name,role,active&id=eq.${auth.user.id}`, {}, auth.access_token);
       const profile = rows[0];
       if (!profile?.active) { showMessage('Почта подтверждена. Заявку должен одобрить начальник АКДС. После одобрения войдите снова.'); return; }
@@ -50,6 +50,12 @@
       panel.querySelector('form').onsubmit = async e => { e.preventDefault(); const button=e.target.querySelector('button');button.disabled=true;showMessage('');try { const auth=await request('/auth/v1/token?grant_type=password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});await submitAuth(auth); } catch(err){showMessage(err.message)} finally {button.disabled=false} };
     };
     const verify = (email, password) => {
+      if (!config.emailCodeEnabled) {
+        panel.innerHTML = `<h3>Подтверждение почты</h3><p>Откройте письмо от Supabase и перейдите по ссылке подтверждения. Затем вернитесь в приложение и войдите с почтой и паролем.</p><div class="form-actions"><button type="button" class="button" id="backToLogin">Перейти к входу</button></div><button type="button" class="link" id="resendSignup">Отправить письмо повторно</button>`;
+        panel.querySelector('#backToLogin').onclick=login;
+        panel.querySelector('#resendSignup').onclick=async e=>{e.target.disabled=true;try{await request('/auth/v1/resend',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,type:'signup'})});showMessage('Письмо отправлено повторно.')}catch(err){showMessage(err.message)}finally{e.target.disabled=false}};
+        return;
+      }
       panel.innerHTML = `<h3>Подтверждение почты</h3><p>Введите код из письма. Без подтверждения приложение не откроется.</p><form id="verifySignup" class="form-grid"><label class="field full">Код из письма<input required name="token" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,8}" maxlength="8"></label><div class="form-actions full"><button class="button">Подтвердить</button></div></form><button type="button" class="link" id="resendSignup">Отправить код повторно</button>`;
       panel.querySelector('form').onsubmit = async e => { e.preventDefault(); const button=e.target.querySelector('button');button.disabled=true;showMessage('');try { const data=await request('/auth/v1/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,token:e.target.elements.token.value.trim(),type:'email'})});const auth=data.access_token?data:await request('/auth/v1/token?grant_type=password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});await submitAuth(auth); } catch(err){showMessage(err.message)} finally {button.disabled=false} };
       panel.querySelector('#resendSignup').onclick = async e => {e.target.disabled=true;try{await request('/auth/v1/resend',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,type:'signup'})});showMessage('Новый код отправлен на почту.')}catch(err){showMessage(err.message)}finally{e.target.disabled=false}};
@@ -57,11 +63,12 @@
     const signup = () => {
       selectTab('signup');
       panel.innerHTML = `<form id="cloudSignup" class="form-grid"><label class="field full">Электронная почта<input required type="email" name="email" autocomplete="email"></label><label class="field full">Новый пароль<input required type="password" name="password" minlength="8" autocomplete="new-password"></label><label class="field full">ФИО<input required name="full_name" minlength="2" maxlength="100" autocomplete="name"></label><label class="field full">Роль<select required name="requested_role"><option value="akds_head">Начальник АКДС</option><option value="skk_head">Начальник СКК</option><option value="warehouseman">Кладовщик</option><option value="operator">Оператор</option></select></label><p class="full">После подтверждения почты начальник АКДС одобрит доступ.</p><div class="form-actions full"><button class="button">Зарегистрироваться</button></div></form>`;
-      panel.querySelector('form').onsubmit = async e => {e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;showMessage('');const data=Object.fromEntries(new FormData(e.target));try{const result=await request('/auth/v1/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:data.email,password:data.password,data:{full_name:data.full_name.trim(),requested_role:data.requested_role}})});if(result.access_token)throw new Error('На сервере отключено обязательное подтверждение почты. Обратитесь к администратору.');verify(data.email,data.password);showMessage('Мы отправили код подтверждения на указанную почту.')}catch(err){showMessage(err.message)}finally{button.disabled=false}};
+      panel.querySelector('form').onsubmit = async e => {e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;showMessage('');const data=Object.fromEntries(new FormData(e.target));try{const result=await request('/auth/v1/signup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:data.email,password:data.password,data:{full_name:data.full_name.trim(),requested_role:data.requested_role}})});if(result.access_token)throw new Error('На сервере отключено обязательное подтверждение почты. Обратитесь к администратору.');verify(data.email,data.password);showMessage(config.emailCodeEnabled?'Мы отправили код подтверждения на указанную почту.':'Мы отправили письмо со ссылкой подтверждения.')}catch(err){showMessage(err.message)}finally{button.disabled=false}};
     };
     node.querySelector('#showLogin').onclick=login;node.querySelector('#showSignup').onclick=signup;login();if(initialMessage)showMessage(initialMessage);
   };
   const start = async () => {
+    if (location.hash.includes('access_token=')) history.replaceState(null,'',location.pathname+location.search);
     let saved = JSON.parse(sessionStorage.getItem(sessionKey) || 'null');
     if (!saved?.token) { setStatus('Требуется вход'); gate(); return; }
     try {
