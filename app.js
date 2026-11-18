@@ -18,7 +18,7 @@ function editIssue(n){let x=state.issues[n];open(`<h2>Изменить выда�
 function protocol(x){let rows=x.cylinders.map((u,i)=>{let c=cyl(u);return`<tr><td>${i+1}</td><td>${c?.id||u}</td><td>${c?.volume||'—'} л</td></tr>`}).join('');open(`<div id="protocolDocument"><h2>Протокол поставки №${x.invoice}</h2><p>${x.org} · ${date(x.date)}</p><div class="detail-grid"><div class="detail"><span>Серия</span><strong>${x.batch}</strong></div><div class="detail"><span>Производство</span><strong>${date(x.production)}</strong></div><div class="detail"><span>Срок годности</span><strong>${date(x.expiry)}</strong></div><div class="detail"><span>Разрешение</span><strong>${x.permission}</strong></div></div><table class="table"><thead><tr><th>№</th><th>Баллон</th><th>Объём</th></tr></thead><tbody>${rows}</tbody></table><p>Выдал: <strong>${x.employee}</strong></p></div><div class="form-actions"><button class="button secondary" data-close>Закрыть</button><button class="button secondary" id="wordProtocol">Word</button><button class="button" id="printProtocol">Печать / PDF</button></div>`);$('#printProtocol').onclick=()=>window.print();$('#wordProtocol').onclick=()=>downloadWord(x.invoice)}function downloadWord(n){let h=`<html><meta charset="utf-8"><body>${$('#protocolDocument').innerHTML}</body></html>`,b=new Blob(['\ufeff',h],{type:'application/msword'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`Протокол_${n}.doc`;a.click();URL.revokeObjectURL(a.href)}
 function returns(){let issued=state.cylinders.filter(c=>c.status==='Выдан');view.innerHTML=head('Возврат баллонов','Введите номер вручную или выберите баллоны. Система покажет серию исходной выдачи.')+`<div class="card form-card"><h2>Принять возврат</h2><label class="field">Номера или внутренние ID вручную<textarea id="returnManual" placeholder="По одному номеру или ID в строке"></textarea></label><div class="scan-line">Баллоны у организаций</div><div class="table-wrap"><table class="table"><thead><tr><th></th><th>Баллон</th><th>Серия и выдача</th><th>Статус</th></tr></thead><tbody>${issued.map(c=>{let i=state.issues.find(i=>!i.cancelled&&i.cylinders.includes(c.uid));return`<tr><td><input type="checkbox" value="${c.uid}"></td><td class="mono"><strong>${c.id}</strong><small> ${c.uid}</small></td><td>${i?`${i.batch} · ${date(i.date)} · ${i.org}`:'Выдача не найдена'}</td><td>${status(c.status)}</td></tr>`}).join('')||'<tr><td colspan="4" class="empty">Нет выданных баллонов</td></tr>'}</tbody></table></div><div class="form-actions"><button class="button" id="returnSelected">Принять возврат</button></div></div>`;$('#returnSelected').onclick=()=>{let checked=[...view.querySelectorAll('input[type=checkbox]:checked')].map(x=>x.value),m=resolve($('#returnManual').value,issued),ids=[...new Set([...checked,...m.found])];if(m.miss.length){toast(`Не найдены среди выданных: ${m.miss.join(', ')}`);return}if(!ids.length){toast('Укажите или выберите баллоны');return}ids.forEach(u=>{let c=cyl(u),i=state.issues.find(i=>!i.cancelled&&i.cylinders.includes(u));c.status='Возвращён';c.history.unshift([today(),'Возврат',`Возвращён на склад${i?`; серия ${i.batch}, накладная №${i.invoice}`:''}`])});save();returns();toast('Возврат принят; статус изменён на «Возвращён»')}}
 function receive(){view.innerHTML=head('Приём баллонов','Добавьте новые или б/у баллоны, ранее не стоявшие на балансе')+`<form id="receiveForm" class="card form-card"><h2>Приём на баланс</h2><div class="form-grid"><label class="field">Номер баллона *<input required name="id"></label><label class="field">Состояние<select name="condition"><option>Новый</option><option>Б/у</option></select></label><label class="field">Объём, л *<input required name="volume" type="number" value="40"></label><label class="field">Дата производства *<input required name="made" type="date"></label><label class="field">Дата освидетельствования *<input required name="inspection" type="date"></label><label class="field">Источник / поставщик<input name="source"></label><label class="field full">Примечание<textarea name="note"></textarea></label></div><div class="form-actions"><button class="button">Принять на баланс</button></div></form>`;$('#receiveForm').onsubmit=e=>{e.preventDefault();let x=Object.fromEntries(new FormData(e.target));x.uid=uid();x.status='На складе';x.history=[[today(),'Приём',`${x.condition}; ${x.source||'источник не указан'}`]];state.cylinders.push(x);save();e.target.reset();toast(`Баллон принят: ${x.uid}`)}}
-function open(h){$('#modalContent').innerHTML=h;$('#modal').classList.remove('hidden');document.querySelectorAll('[data-close]').forEach(x=>x.onclick=close)}function close(){$('#modal').classList.add('hidden')}function render(){({dashboard,cylinders,batches,issue:issuanceForm,return:returns,receive}[route])()}$('#menuButton').onclick=()=>$('.sidebar').classList.toggle('open');$('#modal').onclick=e=>{if(e.target.id==='modal')close()};renderNav();render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js');
+function open(h){$('#modalContent').innerHTML=`<button type="button" class="modal-close" data-close aria-label="Закрыть окно" title="Закрыть">×</button>${h}`;$('#modal').classList.remove('hidden');document.querySelectorAll('#modal [data-close]').forEach(x=>x.onclick=close)}function close(){$('#modal').classList.add('hidden')}function render(){({dashboard,cylinders,batches,issue:issuanceForm,return:returns,receive}[route])()}$('#menuButton').onclick=()=>$('.sidebar').classList.toggle('open');$('#modal').onclick=e=>{if(e.target.id==='modal')close()};document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#modal').classList.contains('hidden'))close()});renderNav();render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js');
 
 // Manual serials entered while creating a batch become incomplete registry cards.
 let autoCreateMissing=false;
@@ -120,18 +120,18 @@ renderNav();
 const issueHistoryCleanup=new MutationObserver(()=>{let form=$('#issueForm'),duplicate=form?.nextElementSibling;if(duplicate?.classList.contains('panel')&&duplicate.textContent.includes('История выдач'))duplicate.remove()});
 issueHistoryCleanup.observe(view,{childList:true,subtree:true});
 
-const roleLabels={warehouseman:'Кладовщик',akds_head:'Начальник АДКС',skk_head:'Начальник СКК',observer:'Наблюдатель'};
-const assignableRoles=['skk_head','akds_head','warehouseman','observer'];
-function routesFor(role){const roles={warehouseman:nav.map(n=>n[0]),akds_head:nav.map(n=>n[0]),skk_head:['dashboard','cylinders','batches','batch-data','issue-history','audit'],observer:nav.map(n=>n[0])};return roles[role]||roles.observer}
-function activeRole(){return window.BALLOON_ROLE||'observer'}
+const roleLabels={warehouseman:'Кладовщик',akds_head:'Начальник АКДС',skk_head:'Начальник СКК',operator:'Оператор'};
+const assignableRoles=['akds_head','skk_head','warehouseman','operator'];
+function routesFor(role){const roles={warehouseman:nav.map(n=>n[0]),akds_head:nav.map(n=>n[0]),skk_head:['dashboard','cylinders','batches','batch-data','issue-history','audit'],operator:nav.map(n=>n[0])};return roles[role]||roles.operator}
+function activeRole(){return window.BALLOON_ROLE||'operator'}
 function renderNav(){let allowed=routesFor(activeRole());if(!allowed.includes(route))route='dashboard';$('#nav').innerHTML=nav.filter(n=>allowed.includes(n[0])).map(n=>`<button class="nav-item ${route===n[0]?'active':''}" data-route="${n[0]}"><span class="nav-icon">${n[1]}</span>${n[2]}</button>`).join('');$('#breadcrumbs').textContent=nav.find(n=>n[0]===route)?.[2]||'';bindRoutes()}
 function go(r){if(!routesFor(activeRole()).includes(r)){toast('У этой роли нет доступа к разделу');return}route=r;renderNav();render();applyRoleControls();$('.sidebar').classList.remove('open')}
 function applyRoleControls(){
-  if(activeRole()!=='observer')return;
+  if(activeRole()!=='operator')return;
   document.querySelectorAll('#view button').forEach(button=>{
     if(button.hasAttribute('data-batch-detail')||button.hasAttribute('data-history-issue'))return;
     button.disabled=true;
-    button.title='Режим наблюдателя: изменение данных недоступно';
+    button.title='Режим оператора: изменение данных недоступно';
   });
   document.querySelectorAll('#view input:not(#search), #view select, #view textarea').forEach(field=>field.disabled=true);
 }
@@ -185,7 +185,7 @@ $('#settingsButton').onclick=()=>{
   const name=currentProfile?.full_name||'Локальный пользователь';
   const role=currentProfile?(roleLabels[currentProfile.role]||currentProfile.role):'Демо-режим';
   const sync=$('#syncStatus');
-  open(`<h2>Настройки</h2><p>Имя сотрудника и права доступа.</p><form id="settingsNameForm" class="form-grid"><label class="field full">Ваше имя<input name="fullName" required minlength="2" maxlength="100"></label><div class="form-actions full"><button class="button">Сохранить имя</button></div></form><div class="detail-grid" style="margin-top:20px"><div class="detail"><span>Роль</span><strong id="settingsRole"></strong></div></div><p>Роль назначает начальник АДКС. Наблюдатель может только просматривать данные.</p>${currentProfile?.role==='akds_head'?'<button type="button" class="button secondary" id="chooseRoleButton">Выбрать роль сотрудника</button><div id="roleManager" hidden></div>':''}<div class="scan-line" id="settingsSync"></div><div class="form-actions"><button type="button" class="button secondary" data-close>Закрыть</button>${currentProfile?'<button type="button" class="button danger" id="signOutButton">Выйти из аккаунта</button>':''}</div>`);
+  open(`<h2>Настройки</h2><p>Имя сотрудника и права доступа.</p><form id="settingsNameForm" class="form-grid"><label class="field full">Ваше имя<input name="fullName" required minlength="2" maxlength="100"></label><div class="form-actions full"><button class="button">Сохранить имя</button></div></form><div class="detail-grid" style="margin-top:20px"><div class="detail"><span>Роль</span><strong id="settingsRole"></strong></div></div><p>Роль назначает начальник АКДС. Оператор пока может просматривать данные.</p>${currentProfile?.role==='akds_head'?'<button type="button" class="button secondary" id="chooseRoleButton">Управление сотрудниками</button><div id="roleManager" hidden></div>':''}<div class="scan-line" id="settingsSync"></div><div class="form-actions"><button type="button" class="button secondary" data-close>Закрыть</button>${currentProfile?'<button type="button" class="button danger" id="signOutButton">Выйти из аккаунта</button>':''}</div>`);
   $('#settingsNameForm').elements.fullName.value=name;
   $('#settingsRole').textContent=role;
   $('#settingsSync').textContent=sync?.title||sync?.textContent?.trim()||'Состояние синхронизации неизвестно';
@@ -204,18 +204,25 @@ async function showRoleManager(){
   try{
     const staff=await window.BALLOON_ACCOUNT_API.listStaff();
     if(!$('#roleManager'))return;
-    area.innerHTML='<p>Выберите сотрудника и назначьте ему одну из четырёх ролей.</p>';
-    const form=document.createElement('form');form.className='form-grid';
-    const person=document.createElement('select');person.name='person';person.required=true;
-    for(const member of staff){const option=document.createElement('option');option.value=member.id;option.textContent=`${member.full_name} · ${member.email}`;person.append(option)}
-    const role=document.createElement('select');role.name='role';role.required=true;
-    for(const value of assignableRoles){const option=document.createElement('option');option.value=value;option.textContent=roleLabels[value];role.append(option)}
-    const personField=document.createElement('label');personField.className='field full';personField.textContent='Сотрудник';personField.append(person);
-    const roleField=document.createElement('label');roleField.className='field full';roleField.textContent='Роль';roleField.append(role);
-    const actions=document.createElement('div');actions.className='form-actions full';actions.innerHTML='<button class="button">Назначить роль</button>';
-    form.append(personField,roleField,actions);area.append(form);
-    const syncSelection=()=>{const assigned=staff.find(member=>member.id===person.value)?.role;role.value=assignableRoles.includes(assigned)?assigned:'observer'};person.onchange=syncSelection;syncSelection();
-    form.onsubmit=async e=>{e.preventDefault();const button=form.querySelector('button');button.disabled=true;try{await window.BALLOON_ACCOUNT_API.assignRole(person.value,role.value);toast('Роль сотрудника сохранена');showRoleManager()}catch(error){toast(error.message)}finally{button.disabled=false}};
+    area.replaceChildren();
+    const intro=document.createElement('p');intro.textContent='Зарегистрированные сотрудники, подтверждение почты и последний вход. Новые заявки требуют одобрения.';area.append(intro);
+    if(!staff.length){const empty=document.createElement('p');empty.textContent='Других аккаунтов пока нет.';area.append(empty)}
+    const formatTime=value=>value?new Intl.DateTimeFormat('ru-RU',{dateStyle:'short',timeStyle:'short'}).format(new Date(value)):'—';
+    for(const member of staff){
+      const card=document.createElement('div');card.className='staff-card';
+      const title=document.createElement('strong');title.textContent=`${member.full_name} · ${member.email}`;
+      const info=document.createElement('p');info.textContent=`${member.active?'Активен':'Ожидает одобрения / доступ закрыт'} · Почта: ${member.email_confirmed_at?'подтверждена':'не подтверждена'} · Регистрация: ${formatTime(member.created_at)} · Последний вход в приложение: ${formatTime(member.last_app_login_at)}`;
+      const requested=document.createElement('p');requested.textContent=`Запрошена роль: ${roleLabels[member.requested_role]||'—'}`;
+      const controls=document.createElement('div');controls.className='staff-actions';
+      const role=document.createElement('select');role.setAttribute('aria-label',`Роль: ${member.full_name}`);
+      for(const value of assignableRoles){const option=document.createElement('option');option.value=value;option.textContent=roleLabels[value];role.append(option)}
+      role.value=member.active?member.role:(member.requested_role||'operator');
+      const saveButton=document.createElement('button');saveButton.type='button';saveButton.className='button small';saveButton.textContent=member.active?'Сохранить роль':'Одобрить';
+      saveButton.onclick=async()=>{saveButton.disabled=true;try{await window.BALLOON_ACCOUNT_API.assignRole(member.id,role.value);toast('Права сотрудника сохранены');showRoleManager()}catch(error){toast(error.message);saveButton.disabled=false}};
+      controls.append(role,saveButton);
+      if(member.active){const removeButton=document.createElement('button');removeButton.type='button';removeButton.className='button danger small';removeButton.textContent='Удалить доступ';removeButton.onclick=async()=>{if(!confirm(`Закрыть доступ для ${member.full_name}? История операций сохранится.`))return;removeButton.disabled=true;try{await window.BALLOON_ACCOUNT_API.deactivateStaff(member.id);toast('Доступ сотрудника закрыт');showRoleManager()}catch(error){toast(error.message);removeButton.disabled=false}};controls.append(removeButton)}
+      card.append(title,info,requested,controls);area.append(card);
+    }
   }catch(error){area.textContent=`Не удалось загрузить сотрудников: ${error.message}`}
 }
 
