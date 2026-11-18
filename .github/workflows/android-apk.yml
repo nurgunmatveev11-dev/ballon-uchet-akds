@@ -32,19 +32,19 @@ jobs:
       - name: Name APK
         run: |
           mkdir -p android/build
-          cp android/app/build/outputs/apk/debug/app-debug.apk android/build/ballon-uchet-akds-0.1.0.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk android/build/ballon-uchet-akds-0.2.0.apk
       - uses: actions/upload-artifact@v4
         with:
           name: ballon-uchet-akds-apk
-          path: android/build/ballon-uchet-akds-0.1.0.apk
+          path: android/build/ballon-uchet-akds-0.2.0.apk
           retention-days: 30
       - name: Publish demo APK
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v0.1.0 android/build/ballon-uchet-akds-0.1.0.apk \
+          gh release create v0.2.0 android/build/ballon-uchet-akds-0.2.0.apk \
             --target main \
-            --title 'Баллон.учёт 0.1.0 (демо APK)' \
+            --title 'Баллон.учёт 0.2.0 (демо APK)' \
             --notes 'Android APK для учёта баллонов. Требуется интернет и аккаунт приложения Supabase. Демо сборка подписана отладочным ключом.'
 
