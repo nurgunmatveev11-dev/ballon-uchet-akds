@@ -314,8 +314,11 @@ public final class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (webView.canGoBack()) webView.goBack();
-        else super.onBackPressed();
+        webView.evaluateJavascript("(function(){var modal=document.getElementById('modal');if(modal&&!modal.classList.contains('hidden')){var close=modal.querySelector('[data-close]');if(close)close.click();return true}var sidebar=document.querySelector('.sidebar.open');if(sidebar){sidebar.classList.remove('open');return true}return false})()", result -> {
+            if ("true".equals(result)) return;
+            if (webView.canGoBack()) webView.goBack();
+            else MainActivity.super.onBackPressed();
+        });
     }
 
     @Override
