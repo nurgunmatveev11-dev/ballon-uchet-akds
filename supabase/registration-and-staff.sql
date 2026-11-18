@@ -15,7 +15,7 @@ returns trigger language plpgsql security definer set search_path = public
 as $$
 declare requested text := new.raw_user_meta_data->>'requested_role';
 begin
-  if requested not in ('akds_head','skk_head','warehouseman','operator') then requested := 'operator'; end if;
+  if requested is null or requested not in ('akds_head','skk_head','warehouseman','operator') then requested := 'operator'; end if;
   insert into public.profiles(id,full_name,role,requested_role,active)
   values(new.id,left(coalesce(nullif(btrim(new.raw_user_meta_data->>'full_name'),''),'Новый сотрудник'),100),'operator',requested::public.app_role,false)
   on conflict (id) do nothing;
