@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0d5d51" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="stylesheet" href="styles.css?v=11" />
+    <title>Баллон · учёт и движение</title>
+  </head>
+  <body class="auth-pending">
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand"><span class="brand-mark">◉</span><span>Баллон<span class="accent">.учёт</span></span></div>
+        <nav id="nav" aria-label="Основное меню"></nav>
+        <div class="profile"><div class="avatar">С</div><div><strong>Сотрудник</strong><small>Учёт баллонов</small></div><button class="icon-button" id="settingsButton" type="button" title="Настройки" aria-label="Настройки">⚙</button></div>
+      </aside>
+      <main>
+        <header class="topbar"><button class="menu-button" id="menuButton">☰</button><div id="breadcrumbs"></div><div class="sync" id="syncStatus"><span class="sync-dot"></span>Проверка соединения</div></header>
+        <section id="view"></section>
+      </main>
+    </div>
+    <div class="modal-backdrop hidden" id="modal"><div class="modal" id="modalContent"></div></div>
+    <div id="toast"></div>
+    <script src="cloud-config.js"></script>
+    <script src="app.js?v=11"></script>
+    <script src="cloud-auth.js?v=11"></script>
+    <script src="cloud-data.js?v=11"></script>
+  </body>
+</html>
+
