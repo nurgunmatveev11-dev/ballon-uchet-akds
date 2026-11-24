@@ -112,7 +112,7 @@
     const node = document.createElement('div');
     node.className = 'modal-backdrop';
     node.id = 'authGate';
-    node.innerHTML = `<div class="modal auth-modal"><h2>Учёт баллонов</h2><p>Для работы войдите или зарегистрируйтесь.</p><div class="auth-tabs"><button type="button" class="button" id="showLogin">Вход</button><button type="button" class="button secondary" id="showSignup">Регистрация</button></div><p class="warning" id="authMessage" hidden></p><div id="authPanel"></div></div>`;
+    node.innerHTML = `<div class="modal auth-modal"><h2>АКДС. Медицинский кислород</h2><p>Для работы войдите или зарегистрируйтесь.</p><div class="auth-tabs"><button type="button" class="button" id="showLogin">Вход</button><button type="button" class="button secondary" id="showSignup">Регистрация</button></div><p class="warning" id="authMessage" hidden></p><div id="authPanel"></div></div>`;
     document.body.append(node);
     const message = node.querySelector('#authMessage');
     const showMessage = text => { message.textContent = text; message.hidden = !text; };
@@ -234,7 +234,7 @@
     document.body.classList.remove('auth-pending');
     const page = document.createElement('main');
     page.className = 'verify-page';
-    page.innerHTML = '<div class="verify-card"><div class="brand"><span class="brand-mark">◉</span><span>Баллон.учёт</span></div><h1>Проверка протокола</h1><p id="verifyMessage">Проверяем запись…</p><div id="verifyDetails" class="detail-grid" hidden></div><a class="button secondary" href="./">Открыть приложение</a></div>';
+    page.innerHTML = '<div class="verify-card"><div class="brand"><span class="brand-mark">◉</span><span>АКДС. Медицинский кислород</span></div><h1>Проверка протокола</h1><p id="verifyMessage">Проверяем запись…</p><div id="verifyDetails" class="detail-grid" hidden></div><a class="button secondary" href="./">Открыть приложение</a></div>';
     document.body.append(page);
     const message = page.querySelector('#verifyMessage'), details = page.querySelector('#verifyDetails');
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(verificationToken)) {
