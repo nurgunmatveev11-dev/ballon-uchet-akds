@@ -3,16 +3,25 @@
   if (!config?.url || !config?.publishableKey) { document.body.classList.remove('auth-pending'); return; }
 
   const sessionKey = 'balloon-cloud-session';
+  const jsonHeaders = { 'Content-Type': 'application/json' };
+  let refreshInProgress;
+  let activeProfile;
+  let activeUserId;
+  let signingOut = false;
   const roleNames = {
     warehouseman: 'Кладовщик',
     akds_head: 'Начальник АКДС', skk_head: 'Начальник СКК', operator: 'Оператор'
   };
   const status = document.getElementById('syncStatus');
   const setStatus = (text, online = false) => {
-    status.innerHTML = `<span class="sync-dot" style="background:${online ? '#71a436' : '#d08b42'}"></span>${text}`;
+    const dot = document.createElement('span');
+    dot.className = 'sync-dot';
+    dot.style.background = online ? '#71a436' : '#d08b42';
+    status.replaceChildren(dot, text);
   };
   const activateProfile = profile => {
-    const activeProfile = { ...profile, role: roleNames[profile.role] ? profile.role : 'operator' };
+    activeProfile = { ...profile, role: roleNames[profile.role] ? profile.role : 'operator' };
+    activeUserId = readSession()?.userId;
     setStatus(`${activeProfile.full_name} · ${roleNames[activeProfile.role]}`, true);
     window.dispatchEvent(new CustomEvent('balloon:profile', { detail: activeProfile }));
   };
@@ -21,9 +30,84 @@
     if (token) headers.Authorization = `Bearer ${token}`;
     const res = await fetch(`${config.url}${path}`, { ...options, headers });
     const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body?.error_description || body?.message || 'Ошибка подключения');
+    if (!res.ok) {
+      const error = new Error(body?.error_description || body?.message || 'Ошибка подключения');
+      error.status = res.status;
+      throw error;
+    }
     return body;
   };
+
+  function readSession() {
+    try { return JSON.parse(localStorage.getItem(sessionKey)); }
+    catch { return null; }
+  }
+
+  function writeSession(auth, userId) {
+    const session = {
+      token: auth.access_token,
+      refreshToken: auth.refresh_token,
+      expiresAt: Date.now() + (auth.expires_in || 3600) * 1000,
+      userId
+    };
+    localStorage.setItem(sessionKey, JSON.stringify(session));
+    return session;
+  }
+
+  function forgetSession() {
+    sessionStorage.removeItem(sessionKey);
+    localStorage.removeItem(sessionKey);
+  }
+
+  function migrateSession() {
+    const legacy = sessionStorage.getItem(sessionKey);
+    if (legacy && !localStorage.getItem(sessionKey)) localStorage.setItem(sessionKey, legacy);
+    sessionStorage.removeItem(sessionKey);
+  }
+
+  async function refreshSession() {
+    const saved = readSession();
+    if (signingOut || !saved?.token) return null;
+    if (!saved.refreshToken || saved.expiresAt > Date.now() + 60000) return saved;
+    try {
+      const auth = await request('/auth/v1/token?grant_type=refresh_token', {
+        method: 'POST', headers: jsonHeaders, body: JSON.stringify({ refresh_token: saved.refreshToken })
+      });
+      if (signingOut || readSession()?.refreshToken !== saved.refreshToken) return readSession();
+      return writeSession(auth, saved.userId);
+    } catch (error) {
+      const current = readSession();
+      if (current?.refreshToken !== saved.refreshToken) return current;
+      if ([400, 401, 403].includes(error.status)) {
+        forgetSession();
+        return null;
+      }
+      // A short outage should not remove a saved login.
+      if (saved.expiresAt > Date.now()) return saved;
+      throw error;
+    }
+  }
+
+  async function getSession() {
+    const saved = readSession();
+    if (signingOut || !saved?.token) return null;
+    if (!saved.refreshToken || saved.expiresAt > Date.now() + 60000) return saved;
+    if (!refreshInProgress) {
+      const refresh = navigator.locks
+        ? navigator.locks.request(sessionKey, refreshSession)
+        : refreshSession();
+      refreshInProgress = refresh.finally(() => { refreshInProgress = undefined; });
+    }
+    return refreshInProgress;
+  }
+
+  async function accessToken() {
+    const session = await getSession();
+    if (!session) throw new Error('Сеанс завершён. Откройте приложение заново и войдите.');
+    return session.token;
+  }
+  window.BALLOON_AUTH = { accessToken };
+
   const gate = (initialMessage = '') => {
     const node = document.createElement('div');
     node.className = 'modal-backdrop';
@@ -40,7 +124,7 @@
       const profile = rows[0];
       if (!profile?.active) { showMessage('Почта подтверждена. Заявку должен одобрить начальник АКДС. После одобрения войдите снова.'); return; }
       await request('/rest/v1/rpc/record_app_login',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'},auth.access_token);
-      sessionStorage.setItem(sessionKey, JSON.stringify({ token: auth.access_token, refreshToken: auth.refresh_token, expiresAt: Date.now() + (auth.expires_in || 3600) * 1000, userId: auth.user.id, profile }));
+      writeSession(auth, auth.user.id);
       node.remove(); activateProfile(profile);
     };
     const selectTab = tab => { node.querySelector('#showLogin').classList.toggle('secondary',tab!=='login');node.querySelector('#showSignup').classList.toggle('secondary',tab!=='signup');showMessage(''); };
@@ -69,30 +153,37 @@
   };
   const start = async () => {
     if (location.hash.includes('access_token=')) history.replaceState(null,'',location.pathname+location.search);
-    let saved = JSON.parse(sessionStorage.getItem(sessionKey) || 'null');
-    if (!saved?.token) { setStatus('Требуется вход'); gate(); return; }
+    migrateSession();
     try {
-      if (saved.refreshToken && saved.expiresAt < Date.now() + 60000) {
-        const auth=await request('/auth/v1/token?grant_type=refresh_token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({refresh_token:saved.refreshToken})});
-        saved={...saved,token:auth.access_token,refreshToken:auth.refresh_token,expiresAt:Date.now()+(auth.expires_in||3600)*1000};sessionStorage.setItem(sessionKey,JSON.stringify(saved));
+      const saved = await getSession();
+      if (saved) {
+        const rows = await request(`/rest/v1/profiles?select=full_name,role,active&id=eq.${saved.userId}`, {}, saved.token);
+        if (signingOut || readSession()?.userId !== saved.userId) return;
+        if (rows[0]?.active) { activateProfile(rows[0]); return; }
+        forgetSession();
       }
-      const profile = await request(`/rest/v1/profiles?select=full_name,role,active&id=eq.${saved.userId}`, {}, saved.token);
-      if (!profile[0]?.active) throw new Error('Сессия недействительна');
-      activateProfile(profile[0]);
-    } catch { sessionStorage.removeItem(sessionKey); setStatus('Требуется вход'); gate(); }
+    } catch (error) {
+      if ([401, 403].includes(error.status)) forgetSession();
+      else {
+        setStatus('Нет связи с сервером');
+        const node = document.createElement('div');
+        node.className = 'modal-backdrop';
+        node.innerHTML = '<div class="modal auth-modal"><h2>Не удалось восстановить сеанс</h2><p>Проверьте подключение к интернету и повторите попытку.</p><button type="button" class="button">Повторить</button></div>';
+        node.querySelector('button').onclick = () => { node.remove(); start(); };
+        document.body.append(node);
+        return;
+      }
+    }
+    setStatus('Требуется вход');
+    gate();
   };
-  const accountRequest = (path, body) => {
-    const saved = JSON.parse(sessionStorage.getItem(sessionKey) || 'null');
-    if (!saved?.token) throw new Error('Сначала войдите в приложение.');
-    return request(`/rest/v1/rpc/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, saved.token);
+  const accountRequest = async (path, body) => {
+    return request(`/rest/v1/rpc/${path}`, { method: 'POST', headers: jsonHeaders, body: JSON.stringify(body) }, await accessToken());
   };
   window.BALLOON_ACCOUNT_API = {
     async saveName(fullName) {
       const name = await accountRequest('set_my_name', { new_full_name: fullName.trim() });
-      const saved = JSON.parse(sessionStorage.getItem(sessionKey));
-      saved.profile.full_name = name;
-      sessionStorage.setItem(sessionKey, JSON.stringify(saved));
-      activateProfile(saved.profile);
+      activateProfile({ ...activeProfile, full_name: name });
       return name;
     },
     listStaff: () => accountRequest('list_staff_profiles', {}),
@@ -101,23 +192,21 @@
   };
   window.BALLOON_DOCUMENTS_API = {
     async upload(file, kind) {
-      const saved = JSON.parse(sessionStorage.getItem(sessionKey) || 'null');
-      if (!saved?.token) throw new Error('Сначала войдите в приложение.');
+      const token = await accessToken();
       const extension = file.name.split('.').pop()?.toLowerCase();
       if (!['pdf','doc','docx','jpg','jpeg','png','webp'].includes(extension)) throw new Error('Допустимые форматы: PDF, Word или изображение.');
       if (file.size > 10 * 1024 * 1024) throw new Error('Размер документа не должен превышать 10 МБ.');
       const path = `${kind}/${crypto.randomUUID()}.${extension}`;
       const response = await fetch(`${config.url}/storage/v1/object/batch-documents/${path}`, {
-        method: 'POST', headers: { apikey: config.publishableKey, Authorization: `Bearer ${saved.token}`, 'Content-Type': file.type || 'application/octet-stream' }, body: file
+        method: 'POST', headers: { apikey: config.publishableKey, Authorization: `Bearer ${token}`, 'Content-Type': file.type || 'application/octet-stream' }, body: file
       });
       if (!response.ok) { const error = await response.json().catch(() => ({})); throw new Error(error.message || 'Не удалось загрузить документ'); }
       return path;
     },
     async read(path) {
-      const saved = JSON.parse(sessionStorage.getItem(sessionKey) || 'null');
-      if (!saved?.token) throw new Error('Сначала войдите в приложение.');
+      const token = await accessToken();
       const response = await fetch(`${config.url}/storage/v1/object/authenticated/batch-documents/${path}`, {
-        headers: { apikey: config.publishableKey, Authorization: `Bearer ${saved.token}` }, cache: 'no-store'
+        headers: { apikey: config.publishableKey, Authorization: `Bearer ${token}` }, cache: 'no-store'
       });
       if (!response.ok) throw new Error('Не удалось открыть документ. Проверьте доступ и соединение.');
       return response.blob();
@@ -128,6 +217,14 @@
     }
   };
   window.addEventListener('balloon:signout', () => {
+    signingOut = true;
+    forgetSession();
+    location.reload();
+  });
+  window.addEventListener('storage', event => {
+    if (!activeUserId || (event.key !== sessionKey && event.key !== null)) return;
+    if (readSession()?.userId === activeUserId) return;
+    signingOut = true;
     sessionStorage.removeItem(sessionKey);
     location.reload();
   });
@@ -166,6 +263,8 @@
         details.hidden = false;
       }).catch(error => { message.textContent = `Проверка недоступна: ${error.message}`; });
     }
+  } else if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start, { once: true });
   } else start();
 })();
 
