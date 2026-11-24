@@ -16,9 +16,8 @@ function batchForm(i){let old=i===undefined?null:state.batches[i],chosen=new Set
 async function finishIssue(e,preview){if(e)e.preventDefault();let x=issueData();if(!x)return;if(preview){protocol(x);return}const submitButton=e?.submitter;if(submitButton)submitButton.disabled=true;x.cancelled=false;x.verificationToken=crypto.randomUUID();state.issues.unshift(x);x.cylinders.forEach(u=>{let c=cyl(u);c.status='Выдан';c.history.unshift([x.date,'Выдача',`Выдан ${x.org}, накладная №${x.invoice}, серия ${seriesForCylinder(x,u)}`,x.verificationToken])});save();try{if(cloudMode)await window.BALLOON_CLOUD_SYNC.whenSaved();issuanceForm();toast('Выдача оформлена');protocol(x)}catch(error){toast('Выдача не сохранена: '+error.message)}}
 function editIssue(n){let x=state.issues[n];open(`<h2>Изменить выдачу</h2><p>Запись останется в истории. Состав баллонов изменяется только через аннулирование и новую выдачу.</p><form id="editIssue" class="form-grid"><label class="field">Организация<input name="org" required value="${x.org}"></label><label class="field">Накладная<input name="invoice" required value="${x.invoice}"></label><label class="field">Дата выдачи<input name="date" required type="date" value="${x.date}"></label><label class="field">Выдал<input name="employee" required value="${x.employee}"></label><div class="form-actions full"><button type="button" class="button secondary" data-close>Отмена</button><button class="button">Сохранить</button></div></form>`);$('#editIssue').onsubmit=e=>{e.preventDefault();Object.assign(x,Object.fromEntries(new FormData(e.target)));save();close();issuanceForm();toast('Выдача исправлена')}}function cancelIssue(n){let x=state.issues[n];x.cylinders.forEach(u=>{let c=cyl(u);if(c&&currentCylinderIssue(c)===x){c.status='На складе';c.history.unshift([today(),'Аннулирование',`Выдача по накладной №${x.invoice} аннулирована`])}});x.cancelled=true;save();issuanceForm();toast('Выдача аннулирована и исключена из остатка')}
 function protocol(x){let rows=x.cylinders.map((u,i)=>{let c=cyl(u);return`<tr><td>${i+1}</td><td>${c?.id||u}</td><td>${c?.volume||'—'} л</td></tr>`}).join('');open(`<div id="protocolDocument"><h2>Протокол поставки №${x.invoice}</h2><p>${x.org} · ${date(x.date)}</p><div class="detail-grid"><div class="detail"><span>Серия</span><strong>${x.batch}</strong></div><div class="detail"><span>Производство</span><strong>${date(x.production)}</strong></div><div class="detail"><span>Срок годности</span><strong>${date(x.expiry)}</strong></div><div class="detail"><span>Разрешение</span><strong>${x.permission}</strong></div></div><table class="table"><thead><tr><th>№</th><th>Баллон</th><th>Объём</th></tr></thead><tbody>${rows}</tbody></table><p>Выдал: <strong>${x.employee}</strong></p></div><div class="form-actions"><button class="button secondary" data-close>Закрыть</button><button class="button secondary" id="wordProtocol">Word</button><button class="button" id="printProtocol">Печать / PDF</button></div>`);$('#printProtocol').onclick=()=>window.print();$('#wordProtocol').onclick=()=>downloadWord(x.invoice)}function downloadWord(n){let h=`<html><meta charset="utf-8"><body>${$('#protocolDocument').innerHTML}</body></html>`,b=new Blob(['\ufeff',h],{type:'application/msword'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`Протокол_${n}.doc`;a.click();URL.revokeObjectURL(a.href)}
-function returns(){let issued=state.cylinders.filter(c=>c.status==='Выдан');view.innerHTML=head('Возврат баллонов','Введите номер вручную или выберите баллоны. Система покажет серию исходной выдачи.')+`<div class="card form-card"><h2>Принять возврат</h2><label class="field">Номера или внутренние ID вручную<textarea id="returnManual" placeholder="По одному номеру или ID в строке"></textarea></label><div class="scan-line">Баллоны у организаций</div><div class="table-wrap"><table class="table"><thead><tr><th></th><th>Баллон</th><th>Серия и выдача</th><th>Статус</th></tr></thead><tbody>${issued.map(c=>{let i=currentCylinderIssue(c);return`<tr><td><input type="checkbox" value="${c.uid}"></td><td class="mono"><strong>${c.id}</strong><small> ${c.uid}</small></td><td>${i?`${escapeHTML(seriesForCylinder(i,c.uid))} · ${date(i.date)} · ${escapeHTML(i.org)}`:'Выдача не найдена'}</td><td>${status(c.status)}</td></tr>`}).join('')||'<tr><td colspan="4" class="empty">Нет выданных баллонов</td></tr>'}</tbody></table></div><div class="form-actions"><button class="button" id="returnSelected">Принять возврат</button></div></div>`;$('#returnSelected').onclick=()=>{let checked=[...view.querySelectorAll('input[type=checkbox]:checked')].map(x=>x.value),m=resolve($('#returnManual').value,issued),ids=[...new Set([...checked,...m.found])];if(m.miss.length){toast(`Не найдены среди выданных: ${m.miss.join(', ')}`);return}if(!ids.length){toast('Укажите или выберите баллоны');return}ids.forEach(u=>{let c=cyl(u),i=currentCylinderIssue(c),returned=today();if(i)(i.returnDates??={})[u]=returned;c.status='Возвращён';c.history.unshift([returned,'Возврат',`Возвращён на склад${i?`; серия ${seriesForCylinder(i,u)}, накладная №${i.invoice}`:''}`,i?.verificationToken])});save();returns();toast('Возврат принят; статус изменён на «Возвращён»')}}
 function receive(){view.innerHTML=head('Приём баллонов','Добавьте новые или б/у баллоны, ранее не стоявшие на балансе')+`<form id="receiveForm" class="card form-card"><h2>Приём на баланс</h2><div class="form-grid"><label class="field">Номер баллона *<input required name="id"></label><label class="field">Состояние<select name="condition"><option>Новый</option><option>Б/у</option></select></label><label class="field">Объём, л *<input required name="volume" type="number" value="40"></label><label class="field">Дата производства *<input required name="made" type="date"></label><label class="field">Дата освидетельствования *<input required name="inspection" type="date"></label><label class="field">Источник / поставщик<input name="source"></label><label class="field full">Примечание<textarea name="note"></textarea></label></div><div class="form-actions"><button class="button">Принять на баланс</button></div></form>`;$('#receiveForm').onsubmit=e=>{e.preventDefault();let x=Object.fromEntries(new FormData(e.target));x.uid=uid();x.status='На складе';x.history=[[today(),'Приём',`${x.condition}; ${x.source||'источник не указан'}`]];state.cylinders.push(x);save();e.target.reset();toast(`Баллон принят: ${x.uid}`)}}
-function open(h){$('#modalContent').innerHTML=`<button type="button" class="modal-close" data-close aria-label="Закрыть окно" title="Закрыть">×</button>${h}`;$('#modal').classList.remove('hidden');document.querySelectorAll('#modal [data-close]').forEach(x=>x.onclick=close)}function close(){$('#modal').classList.add('hidden')}function render(){({dashboard,cylinders,batches,issue:issuanceForm,return:returns,receive}[route])()}$('#menuButton').onclick=()=>$('.sidebar').classList.toggle('open');$('#modal').onclick=e=>{if(e.target.id==='modal')close()};document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#modal').classList.contains('hidden'))close()});renderNav();render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js');
+function open(h){$('#modalContent').innerHTML=`<button type="button" class="modal-close" data-close aria-label="Закрыть окно" title="Закрыть">×</button>${h}`;$('#modal').classList.remove('hidden');document.querySelectorAll('#modal [data-close]').forEach(x=>x.onclick=close)}function close(){$('#modal').classList.add('hidden')}function render(){({dashboard,cylinders,batches,issue:issuanceForm,return:returns,'return-history':returnHistory,receive}[route])()}$('#menuButton').onclick=()=>$('.sidebar').classList.toggle('open');$('#modal').onclick=e=>{if(e.target.id==='modal')close()};document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#modal').classList.contains('hidden'))close()});renderNav();render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js');
 
 // Manual serials entered while creating a batch become incomplete registry cards.
 let autoCreateMissing=false;
@@ -66,19 +65,20 @@ document.addEventListener('submit',e=>{
 },true);
 function batchesData(){view.innerHTML=head('Данные о партиях','Реестр загруженных серий, их реквизиты и документы.')+`<div class="card table-wrap"><table class="table"><thead><tr><th>Серия</th><th>Дата наполнения</th><th>Срок годности</th><th>Объём</th><th>Наполнял</th><th>Баллонов</th><th>Документы</th></tr></thead><tbody>${state.batches.map(b=>`<tr><td class="mono"><strong>${b.number}</strong></td><td>${date(b.produced)}</td><td>${date(b.expiry)}</td><td>${b.volume?b.volume+' л':'—'}</td><td>${b.filler||'—'}</td><td>${b.cylinders.length}</td><td>${b.certificateName?`Сертификат: ${b.certificateName}<br>`:'Сертификат не загружен<br>'}${b.permitDocumentName?`Разрешение: ${b.permitDocumentName}`:'Разрешение не загружено'}</td></tr>`).join('')||'<tr><td colspan="7" class="empty">Загруженных серий пока нет</td></tr>'}</tbody></table></div>`}
 nav.splice(3,0,['batch-data','▤','Данные о партиях']);
-function render(){({dashboard,cylinders,batches,'batch-data':batchesData,issue:issuanceForm,return:returns,receive}[route])()}
+function render(){({dashboard,cylinders,batches,'batch-data':batchesData,issue:issuanceForm,return:returns,'return-history':returnHistory,receive}[route])()}
 renderNav();
 
 function batchesData(){view.innerHTML=head('Данные о партиях','Реестр загруженных серий, их реквизиты и документы.')+`<div class="card table-wrap"><table class="table"><thead><tr><th>Серия</th><th>Дата наполнения</th><th>Срок годности</th><th>Объём</th><th>Наполнял</th><th>Баллонов</th><th>Документы</th><th></th></tr></thead><tbody>${state.batches.map((b,i)=>`<tr><td class="mono"><strong>${b.number}</strong></td><td>${date(b.produced)}</td><td>${date(b.expiry)}</td><td>${b.volume?b.volume+' л':'—'}</td><td>${b.filler||'—'}</td><td>${b.cylinders.length}</td><td>${b.certificateName?'Сертификат загружен':'Сертификат не загружен'}<br>${b.permitDocumentName?'Разрешение загружено':'Разрешение не загружено'}</td><td><button class="button secondary small" data-batch-detail="${i}">Подробнее</button></td></tr>`).join('')||'<tr><td colspan="8" class="empty">Загруженных серий пока нет</td></tr>'}</tbody></table></div>`;document.querySelectorAll('[data-batch-detail]').forEach(b=>b.onclick=()=>batchDetail(+b.dataset.batchDetail))}
 function batchDetail(index){let b=state.batches[index],items=b.cylinders.map(u=>cyl(u)).filter(Boolean),defects=(b.defects||[]).map(u=>cyl(u)).filter(Boolean);open(`<h2>Серия ${b.number}</h2><p>Детальная информация о наполнении и составе партии.</p><div class="detail-grid"><div class="detail"><span>Дата наполнения</span><strong>${date(b.produced)}</strong></div><div class="detail"><span>Срок годности</span><strong>${date(b.expiry)}</strong></div><div class="detail"><span>Объём серии</span><strong>${b.volume?b.volume+' л':'Не указан'}</strong></div><div class="detail"><span>Наполнял</span><strong>${b.filler||'—'}</strong></div><div class="detail"><span>Дата разрешения</span><strong>${date(b.permissionDate)}</strong></div><div class="detail"><span>Баллонов</span><strong>${items.length}</strong></div></div><div class="scan-line">Сертификат качества: ${b.certificateName||'не загружен'}<br>Разрешение: ${b.permitDocumentName||'не загружено'}</div><h3>Баллоны в партии</h3><div class="table-wrap"><table class="table"><thead><tr><th>Номер</th><th>Внутренний ID</th><th>Объём</th><th>Статус</th><th>Производство</th><th>Освидетельствование</th></tr></thead><tbody>${items.map(c=>`<tr><td class="mono"><strong>${c.id}</strong></td><td class="mono">${c.uid}</td><td>${c.volume||b.volume||'—'} л</td><td>${status(c.status)}</td><td>${cylinderMonth(c.made)}</td><td>${cylinderMonth(c.inspection)}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">В серии пока нет баллонов</td></tr>'}</tbody></table></div>${defects.length?`<h3>Бракованные баллоны</h3><p>${defects.map(c=>`${c.id} (${c.volume||b.volume||'—'} л)`).join(', ')}</p>`:''}<div class="form-actions"><button class="button secondary" data-close>Закрыть</button></div>`)}
 
 state.organizations??=[{name:'ООО «Север»',inn:'',contact:''}];
-if(!nav.some(n=>n[0]==='organizations'))nav.push(['organizations','▦','Организации']);
+if(!nav.some(n=>n[0]==='organizations'))nav.splice(nav.findIndex(item => item[0] === 'return') + 1, 0, ['return-history','↶','История возврата']);
+nav.push(['organizations','▦','Организации']);
 function organizations(){view.innerHTML=head('Организации','Справочник покупателей кислорода.',`<button class="button" id="addOrganization">+ Добавить организацию</button>`)+`<div class="card table-wrap"><table class="table"><thead><tr><th>Наименование</th><th>ИНН</th><th>Контакт</th></tr></thead><tbody>${state.organizations.map(o=>`<tr><td><strong>${o.name}</strong></td><td>${o.inn||'—'}</td><td>${o.contact||'—'}</td></tr>`).join('')||'<tr><td colspan="3" class="empty">Организаций пока нет</td></tr>'}</tbody></table></div>`;$('#addOrganization').onclick=organizationForm}
 function organizationForm(){open(`<h2>Новая организация</h2><p>Запись появится в списке при оформлении выдачи.</p><form id="organizationForm" class="form-grid"><label class="field full">Наименование *<input required name="name"></label><label class="field">ИНН<input name="inn"></label><label class="field">Контактное лицо / телефон<input name="contact"></label><div class="form-actions full"><button type="button" class="button secondary" data-close>Отмена</button><button class="button">Добавить</button></div></form>`);$('#organizationForm').onsubmit=e=>{e.preventDefault();let o=Object.fromEntries(new FormData(e.target));if(state.organizations.some(x=>x.name.toLowerCase()===o.name.toLowerCase())){toast('Такая организация уже есть');return}state.organizations.push(o);save();close();organizations();toast('Организация добавлена')}}
 
 
-function render(){({dashboard,cylinders,batches,'batch-data':batchesData,issue:issuanceForm,return:returns,receive,organizations}[route])()}
+function render(){({dashboard,cylinders,batches,'batch-data':batchesData,issue:issuanceForm,return:returns,'return-history':returnHistory,receive,organizations}[route])()}
 renderNav();
 
 if(!nav.some(n=>n[0]==='issue-history'))nav.splice(nav.findIndex(n=>n[0]==='issue')+1,0,['issue-history','☷','История выдачи']);
@@ -94,7 +94,7 @@ function auditPage(){
 
 function issueHistory(){view.innerHTML=head('История выдачи','Все оформленные выдачи, включая аннулированные записи.')+`<div class="card table-wrap"><table class="table"><thead><tr><th>Номер протокола</th><th>Дата</th><th>Организация</th><th>Накладная</th><th>Серия</th><th>Баллонов</th><th>Статус</th><th></th></tr></thead><tbody>${state.issues.map((i,n)=>`<tr><td class="mono"><strong>${i.deliveryNumber||'—'}</strong></td><td>${date(i.date)}</td><td>${i.org}</td><td>№${i.invoice}</td><td>${i.batch}</td><td>${i.cylinders.length}</td><td>${status(i.cancelled?'Аннулирован':'Действует')}</td><td><button class="button secondary small" data-history-issue="${n}">Подробнее</button></td></tr>`).join('')||'<tr><td colspan="8" class="empty">Выдач пока нет</td></tr>'}</tbody></table></div>`;document.querySelectorAll('[data-history-issue]').forEach(b=>b.onclick=()=>issueDetail(+b.dataset.historyIssue))}
 function issueDetail(index){let i=state.issues[index],items=i.cylinders.map(u=>cyl(u)).filter(Boolean);open(`<h2>Протокол ${i.deliveryNumber||'без номера'}</h2><p>${i.cancelled?'Запись аннулирована и не влияет на остаток.':'Действующая выдача.'}</p><div class="detail-grid"><div class="detail"><span>Организация</span><strong>${i.org}</strong></div><div class="detail"><span>Дата выдачи</span><strong>${date(i.date)}</strong></div><div class="detail"><span>Накладная</span><strong>№${i.invoice}</strong></div><div class="detail"><span>Серия</span><strong>${i.batch}</strong></div><div class="detail"><span>Выдал</span><strong>${i.employee}</strong></div><div class="detail"><span>Разрешение</span><strong>${i.permission||'—'}</strong></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Номер баллона</th><th>Внутренний ID</th><th>Объём</th><th>Текущий статус</th></tr></thead><tbody>${items.map(c=>`<tr><td class="mono"><strong>${c.id}</strong></td><td class="mono">${c.uid}</td><td>${c.volume||'—'} л</td><td>${status(c.status)}</td></tr>`).join('')||'<tr><td colspan="4" class="empty">Состав выдачи не найден</td></tr>'}</tbody></table></div><div class="form-actions"><button class="button secondary" data-close>Закрыть</button></div>`)}
-function render(){({dashboard,cylinders,batches,'batch-data':batchesData,issue:issuanceForm,'issue-history':issueHistory,audit:auditPage,return:returns,receive,organizations}[route])()}
+function render(){({dashboard,cylinders,batches,'batch-data':batchesData,issue:issuanceForm,'issue-history':issueHistory,audit:auditPage,return:returns,'return-history':returnHistory,receive,organizations}[route])()}
 renderNav();
 
 // The dedicated "История выдачи" section is the single source for the issue journal.
@@ -102,14 +102,14 @@ renderNav();
 
 const roleLabels={warehouseman:'Кладовщик',akds_head:'Начальник АКДС',skk_head:'Начальник СКК',operator:'Оператор'};
 const assignableRoles=['akds_head','skk_head','warehouseman','operator'];
-function routesFor(role){const roles={warehouseman:nav.map(n=>n[0]),akds_head:nav.map(n=>n[0]),skk_head:['dashboard','cylinders','batches','batch-data','issue-history','audit'],operator:nav.map(n=>n[0])};return roles[role]||roles.operator}
+function routesFor(role){const roles={warehouseman:nav.map(n=>n[0]),akds_head:nav.map(n=>n[0]),skk_head:['dashboard','cylinders','batches','batch-data','issue-history','return-history','audit'],operator:nav.map(n=>n[0])};return roles[role]||roles.operator}
 function activeRole(){return window.BALLOON_ROLE||'operator'}
 function renderNav(){let allowed=routesFor(activeRole());if(!allowed.includes(route))route='dashboard';$('#nav').innerHTML=nav.filter(n=>allowed.includes(n[0])).map(n=>`<button class="nav-item ${route===n[0]?'active':''}" data-route="${n[0]}"><span class="nav-icon">${n[1]}</span>${n[2]}</button>`).join('');$('#breadcrumbs').textContent=nav.find(n=>n[0]===route)?.[2]||'';bindRoutes()}
 function go(r){if(!routesFor(activeRole()).includes(r)){toast('У этой роли нет доступа к разделу');return}route=r;renderNav();render();applyRoleControls();$('.sidebar').classList.remove('open')}
 function applyRoleControls(){
   if(activeRole()!=='operator')return;
   document.querySelectorAll('#view button').forEach(button=>{
-    if(button.hasAttribute('data-batch-detail')||button.hasAttribute('data-batch-info')||button.hasAttribute('data-history-issue'))return;
+    if(button.hasAttribute('data-batch-detail')||button.hasAttribute('data-batch-info')||button.hasAttribute('data-history-issue')||button.hasAttribute('data-return-record'))return;
     button.disabled=true;
     button.title='Режим оператора: изменение данных недоступно';
   });
@@ -141,7 +141,6 @@ document.addEventListener('submit',event=>{
   const form=event.target,labels={cylinderForm:'Добавление баллона',batchForm:'Создание или изменение партии',issueForm:'Выдача баллонов',receiveForm:'Приём баллона',organizationForm:'Добавление организации'};
   if(labels[form?.id])window.BALLOON_AUDIT_NOTE=labels[form.id];
 },true);
-document.addEventListener('click',event=>{if(event.target?.id==='returnSelected')window.BALLOON_AUDIT_NOTE='Возврат баллонов'},true);
 const showOriginalEditIssue=editIssue;
 editIssue=function(index){
   showOriginalEditIssue(index);
@@ -328,6 +327,186 @@ function currentCylinderIssue(cylinder) {
   return issue && !issueReturnDate(issue, cylinder) ? issue : undefined;
 }
 
+function returnItem(cylinder, issue) {
+  return {
+    uid: cylinder.uid,
+    number: cylinder.id,
+    volume: cylinder.volume,
+    series: issue ? seriesForCylinder(issue, cylinder.uid) : '',
+    organization: issue?.org,
+    issuedOn: issue?.date,
+    invoice: issue?.invoice,
+    protocol: issue?.deliveryNumber
+  };
+}
+
+function returnItemsTable(items, selectable = false) {
+  const rows = items.map(item => `<tr>
+    ${selectable ? `<td><input type="checkbox" name="returnCylinder" value="${escapeHTML(item.uid)}" aria-label="Баллон ${escapeHTML(item.number)}"></td>` : ''}
+    <td><strong>${escapeHTML(item.number)}</strong><br><small>${escapeHTML(item.uid)}</small></td>
+    <td>${item.volume ? escapeHTML(item.volume) + ' л' : '—'}</td>
+    <td>${escapeHTML(item.series || '—')}</td><td>${date(item.issuedOn)}</td>
+    <td>${escapeHTML(item.organization || '—')}</td>
+    <td>${escapeHTML(item.protocol || item.invoice || '—')}</td>
+  </tr>`).join('');
+  return `<div class="table-wrap"><table class="table return-table"><thead><tr>
+    ${selectable ? '<th aria-label="Выбор"></th>' : ''}<th>Баллон</th><th>Объём</th><th>Серия</th>
+    <th>Дата выдачи</th><th>Кто брал</th><th>Протокол / накладная</th>
+  </tr></thead><tbody>${rows || '<tr><td colspan="7" class="empty">Выданных баллонов нет</td></tr>'}</tbody></table></div>`;
+}
+
+function returns() {
+  const issued = state.cylinders.filter(cylinder => cylinder.status === 'Выдан');
+  view.innerHTML = head('Возврат баллонов', 'Укажите номера или отметьте баллоны в списке. Перед приёмом проверьте данные исходной выдачи.') +
+    `<form id="returnForm" class="card form-card">
+      <label class="field">Номера или внутренние ID вручную<textarea name="manual" placeholder="По одному номеру или ID в строке"></textarea></label>
+      <div class="scan-line">Баллоны у организаций</div>
+      ${returnItemsTable(issued.map(cylinder => returnItem(cylinder, currentCylinderIssue(cylinder))), true)}
+      <div class="form-actions"><button class="button">Проверить возврат</button></div>
+    </form>`;
+  $('#returnForm').onsubmit = event => {
+    event.preventDefault();
+    const fields = new FormData(event.target);
+    const ids = new Set(fields.getAll('returnCylinder'));
+    for (const number of String(fields.get('manual')).split(/[\n,;]+/).map(value => value.trim()).filter(Boolean)) {
+      const exact = issued.find(cylinder => cylinder.uid === number);
+      const matches = exact ? [exact] : issued.filter(cylinder => String(cylinder.id) === number);
+      if (matches.length !== 1) {
+        toast(matches.length ? `Номер ${number} повторяется. Укажите внутренний ID.` : `Баллон ${number} не найден среди выданных.`);
+        return;
+      }
+      ids.add(matches[0].uid);
+    }
+    if (!ids.size) { toast('Укажите или выберите баллоны'); return; }
+    confirmReturn([...ids]);
+  };
+}
+
+function confirmReturn(ids) {
+  const cylinders = ids.map(cyl);
+  if (cylinders.some(cylinder => cylinder?.status !== 'Выдан')) {
+    toast('Статус баллонов изменился. Проверьте список.');
+    returns();
+    return;
+  }
+  const issues = cylinders.map(currentCylinderIssue);
+  const items = cylinders.map((cylinder, index) => returnItem(cylinder, issues[index]));
+  open(`<h2>Подтверждение возврата</h2>
+    <p>К приёмке: ${items.length}. Проверьте серию, дату выдачи и организацию для каждого баллона.</p>
+    ${items.some(item => !item.issuedOn) ? '<p class="warning">Для некоторых баллонов исходная выдача не найдена. Проверьте их по документам.</p>' : ''}
+    ${returnItemsTable(items)}
+    <form id="confirmReturnForm">
+      <div class="form-grid">
+        <label class="field">Кто сдал<input name="contact" maxlength="150" placeholder="ФИО, если известно"></label>
+        <label class="field">Откуда привезли<input name="source" maxlength="200" placeholder="Филиал или адрес, если известен"></label>
+      </div>
+      <div class="form-actions"><button type="button" class="button secondary" data-close>Назад</button><button class="button">Подтвердить возврат</button></div>
+    </form>`);
+  $('#confirmReturnForm').onsubmit = async event => {
+    event.preventDefault();
+    const form = event.target;
+    const submit = form.querySelector('button:last-child');
+    if (submit.disabled) return;
+    if (cylinders.some((cylinder, index) => cyl(cylinder.uid) !== cylinder ||
+      cylinder.status !== 'Выдан' || currentCylinderIssue(cylinder) !== issues[index])) {
+      close();
+      returns();
+      toast('Данные выдачи изменились. Выберите баллоны повторно.');
+      return;
+    }
+    submit.disabled = true;
+    const fields = new FormData(form);
+    const now = new Date();
+    const day = new Intl.DateTimeFormat('sv-SE', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+    const record = {
+      id: crypto.randomUUID(),
+      timestamp: now.toISOString(),
+      acceptedBy: window.BALLOON_DISPLAY_NAME || '',
+      contact: String(fields.get('contact')).trim(),
+      source: String(fields.get('source')).trim()
+    };
+    cylinders.forEach((cylinder, index) => {
+      const issue = issues[index];
+      const item = items[index];
+      if (issue) (issue.returnDates ??= {})[cylinder.uid] = day;
+      cylinder.status = 'Возвращён';
+      const detail = item.series ? `Возвращён на склад; серия ${item.series}, накладная №${item.invoice || '—'}` : 'Возвращён на склад';
+      cylinder.history.unshift([day, 'Возврат', detail, issue?.verificationToken, { ...record, item }]);
+    });
+    save('Возврат баллонов');
+    try {
+      if (cloudMode) await window.BALLOON_CLOUD_SYNC.whenSaved();
+      if (route === 'return') returns();
+      toast('Возврат принят');
+      if ($('#confirmReturnForm') === form && !$('#modal').classList.contains('hidden')) {
+        showReturnRecord({ ...record, day, items });
+      }
+    } catch (error) {
+      if ($('#confirmReturnForm') === form) close();
+      toast(`Возврат не сохранён: ${error.message}`);
+    }
+  };
+}
+
+function recordedReturns() {
+  const records = new Map();
+  for (const cylinder of state.cylinders) {
+    for (const [index, [day, action, detail, issueToken, snapshot]] of (cylinder.history || []).entries()) {
+      if (action !== 'Возврат') continue;
+      if (snapshot?.id && snapshot.item) {
+        const { item, ...metadata } = snapshot;
+        if (!records.has(metadata.id)) records.set(metadata.id, { ...metadata, day, items: [] });
+        records.get(metadata.id).items.push(item);
+        continue;
+      }
+      const candidates = cylinderIssues(cylinder.uid).filter(issue => issueReturnDate(issue, cylinder) === day &&
+        (!issueToken || issue.verificationToken === issueToken));
+      const item = returnItem(cylinder, candidates.length === 1 ? candidates[0] : undefined);
+      item.series ||= /серия (.*?), накладная/.exec(detail || '')?.[1] || '';
+      item.organization ||= /^Возвращён от (.+)$/.exec(detail || '')?.[1] || '';
+      records.set(`legacy-${cylinder.uid}-${index}`, { day, items: [item], legacy: true });
+    }
+  }
+  return [...records.values()].sort((a, b) => (b.timestamp || b.day).localeCompare(a.timestamp || a.day));
+}
+
+function returnOrganizations(record) {
+  return [...new Set(record.items.map(item => item.organization).filter(Boolean))].join(', ') || '—';
+}
+
+function returnHistory() {
+  const records = recordedReturns();
+  view.innerHTML = head('История возврата', 'Журнал принятых возвратов с возможностью открыть документ.') +
+    `<div class="card table-wrap"><table class="table"><thead><tr>
+      <th>Дата возврата</th><th>Организация</th><th>Кто сдал</th><th>Откуда привезли</th><th>Баллоны</th><th></th>
+    </tr></thead><tbody>${records.map((record, index) => `<tr>
+      <td>${date(record.day)}</td><td>${escapeHTML(returnOrganizations(record))}</td>
+      <td>${escapeHTML(record.contact || '—')}</td><td>${escapeHTML(record.source || '—')}</td>
+      <td>${escapeHTML(record.items.slice(0, 5).map(item => item.number).join(', '))}${record.items.length > 5 ? ` и ещё ${record.items.length - 5}` : ''}</td>
+      <td><button type="button" class="button secondary small" data-return-record="${index}">Подробнее</button></td>
+    </tr>`).join('') || '<tr><td colspan="6" class="empty">Возвратов пока нет</td></tr>'}</tbody></table></div>`;
+  view.querySelectorAll('[data-return-record]').forEach(button => {
+    button.onclick = () => showReturnRecord(records[Number(button.dataset.returnRecord)]);
+  });
+}
+
+function showReturnRecord(record) {
+  open(`<section id="returnDocument"><h2>Акт возврата баллонов</h2>
+    <p>Дата возврата: ${date(record.day)} · Баллонов: ${record.items.length}</p>
+    ${record.legacy ? '<p>Запись восстановлена из истории баллона. Доступны только сведения, которые были сохранены на момент возврата.</p>' : ''}
+    <div class="detail-grid">
+      <div class="detail"><span>Организация</span><strong>${escapeHTML(returnOrganizations(record))}</strong></div>
+      <div class="detail"><span>Кто сдал</span><strong>${escapeHTML(record.contact || '—')}</strong></div>
+      <div class="detail"><span>Откуда привезли</span><strong>${escapeHTML(record.source || '—')}</strong></div>
+      <div class="detail"><span>Кто принял</span><strong>${escapeHTML(record.acceptedBy || '—')}</strong></div>
+    </div>
+    ${returnItemsTable(record.items)}
+    <p>Сдал ____________________ &nbsp; Принял ____________________</p>
+    </section><div class="form-actions"><button type="button" class="button secondary" data-close>Закрыть</button>
+    <button type="button" class="button" id="printReturn">Печать / PDF</button></div>`);
+  $('#printReturn').onclick = () => window.print();
+}
+
 function batchMovements(batch) {
   const ids = [...new Set(batch.cylinders)];
   return ids.map(id => {
@@ -493,5 +672,4 @@ function issueData() {
   const series = [...seenSeries];
   return { ...issue, production, expiry, permission, series, batch: series.join(', '), cylinders: [...seenCylinders], seriesDetails };
 }
-
 
