@@ -1,4 +1,4 @@
-const CACHE = 'balloon-v12';
+const CACHE = 'balloon-v13';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './cloud-config.js', './cloud-auth.js', './cloud-data.js'];
 
 self.addEventListener('install', event => {
