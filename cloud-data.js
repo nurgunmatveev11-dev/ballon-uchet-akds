@@ -1,8 +1,9 @@
 (function(){
   const config=window.BALLOON_CLOUD_CONFIG;
-  let version=null, token=null, busy=false, pending=false, pendingNote='', lastSynced='', flushPromise=Promise.resolve(), lastFlushError=null;
+  let version=null, busy=false, pending=false, pendingNote='', lastSynced='', flushPromise=Promise.resolve(), lastFlushError=null;
   const message=t=>{const el=document.getElementById('syncStatus');if(el)el.title=t};
   async function api(path,options={}){
+    const token=await window.BALLOON_AUTH.accessToken();
     const res=await fetch(config.url+path,{...options,headers:{apikey:config.publishableKey,Authorization:`Bearer ${token}`,'Content-Type':'application/json',...options.headers}});
     const body=await res.json().catch(()=>null);
     if(!res.ok)throw Error(body?.message||body?.error||`HTTP ${res.status}`);
@@ -35,7 +36,6 @@
   window.BALLOON_AUDIT_API={list:()=>api('/rest/v1/rpc/list_registry_audit',{method:'POST',body:'{}'})};
   window.BALLOON_BACKUP_API={
     async download(){
-      if(!token)throw Error('Сначала войдите в приложение.');
       const rows=await api('/rest/v1/registry_state?select=data,version&id=eq.1');
       if(rows.length!==1)throw Error('Не удалось прочитать реестр с сервера.');
       const paths=new Map();
@@ -67,8 +67,6 @@
     }
   };
   window.addEventListener('balloon:profile',async()=>{
-    const saved=JSON.parse(sessionStorage.getItem('balloon-cloud-session')||'null');token=saved?.token;
-    if(!token)return;
     try{await load()}catch(e){message(e.message);const gate=document.createElement('div');gate.id='cloudUnavailable';gate.className='modal-backdrop';gate.innerHTML='<div class="modal"><h2>Нет связи с сервером</h2><p id="cloudError"></p><p>Обновите страницу после восстановления соединения. Операции учёта пока недоступны.</p></div>';document.body.append(gate);document.getElementById('cloudError').textContent=e.message}
   });
 })();
