@@ -28,7 +28,22 @@
         version=await api('/rest/v1/rpc/save_registry_state_v2',{method:'POST',body:JSON.stringify({expected_version:version,new_data:JSON.parse(snapshot),audit_note:note||'Обновление реестра'})});
         lastSynced=snapshot;message(`Изменения сохранены в облаке, версия ${version}`);
       }while(pending);
-    }catch(e){lastFlushError=e;pending=false;pendingNote='';message(`Ошибка сохранения: ${e.message}`);if(lastSynced)useData(JSON.parse(lastSynced));alert(`Изменение не сохранено: ${e.message}. На экране восстановлены последние данные с сервера.`)}
+    } catch (error) {
+      lastFlushError = error;
+      pending = false;
+      pendingNote = '';
+      if (lastSynced) useData(JSON.parse(lastSynced));
+      if (error.message.includes('Registry changed on another device')) {
+        try {
+          await load();
+          error.message = 'Реестр изменён на другом устройстве. Загружена свежая версия. Повторите операцию.';
+        } catch {
+          error.message = 'Реестр изменён на другом устройстве. Обновите страницу и повторите операцию.';
+        }
+      }
+      message(`Ошибка сохранения: ${error.message}`);
+      alert(`Изменение не сохранено. ${error.message}`);
+    }
     finally{busy=false}
   }
   window.addEventListener('balloon:save',event=>{pending=true;pendingNote=event.detail?.note||pendingNote;if(!busy)flushPromise=flush()});
