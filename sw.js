@@ -1,5 +1,5 @@
-const CACHE = 'balloon-v15';
-const ASSETS = ['./', './index.html', './styles.css?v=15', './app.js?v=15', './cloud-config.js', './cloud-auth.js?v=15', './cloud-data.js?v=14'];
+const CACHE = 'balloon-v16';
+const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.svg', './styles.css?v=16', './app.js?v=16', './cloud-config.js', './cloud-auth.js?v=15', './cloud-data.js?v=16'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting()));
