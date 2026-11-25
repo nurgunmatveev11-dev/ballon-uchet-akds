@@ -15,6 +15,9 @@ body.auth-pending .app-shell{visibility:hidden}
 .sidebar .brand > span:last-child { font-size: 1rem; line-height: 1.25; }
 .sidebar nav { min-height: 0; overflow-y: auto; }
 #confirmReturnForm > .form-grid { margin-top: 16px; }
+@media (max-width: 600px) {
+  .field input, .field select, .field textarea, .search { font-size: 16px; }
+}
 @media print {
   body:has(#modal:not(.hidden) :is(#batchPrint, #protocolDocument, #returnDocument)) .app-shell,
   #modal:has(:is(#batchPrint, #protocolDocument, #returnDocument)) :is(.modal-close, .form-actions) {
